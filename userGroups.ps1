@@ -91,53 +91,103 @@ function main {
     $deptUsersTree = [System.Windows.Forms.TreeView]::new();
     $deptUsersTree.Dock = [System.Windows.Forms.DockStyle]::Fill;    
     $deptUsersTree.ShowNodeToolTips = $true;
+    $deptUsersMenu = [System.Windows.Forms.ContextMenu]::new();
+    
+    $refreshDeptUsers = $deptUsersMenu.MenuItems.Add("Refresh");
+    $refreshDeptUsers.Add_Click({getDeptUsers});
+    
+    $unlockUser = $deptUsersMenu.MenuItems.Add("Unlock User");
+    $unlockUser.Enabled = $false;
+    
+    $findUser = $deptUsersMenu.MenuItems.Add("Find User");
+    $findUser.Add_Click({
+        Add-Type -AssemblyName Microsoft.VisualBasic;
+        $u = [Microsoft.VisualBasic.Interaction]::InputBox("Enter username to find department", "Find User Department");
+        $d = $deptUsers | ? { $_.SAMAccountName -eq $u } | Select -ExpandProperty Department;
 
-    $deptUsers = Get-ADUser -filter * -Properties Department,LockedOut | ? Enabled -EQ $true;
-    $deptUsers.Department | Select -Unique | % {
-    $dept = $_
-        if ($dept -ne $null) {
-            $deptNode = $deptUsersTree.Nodes.Add($_);
-            $deptNode.ToolTipText = $dept;
-            $deptUsers | ? Department -Match $dept | % {
-                $user = $_.SAMAccountName;
-                $userNode = $deptNode.Nodes.Add($user);
-                $userNode.ToolTipText = $_.Name; 
-                
-                if ($_.LockedOut) {
-                    $deptNode.Expand();
-                    $userNode.ForeColor = [System.Drawing.Color]::Red;
+        if ($d.Count -eq 1) {
+            foreach ($dept in $d) {
+                $dNode = $deptUsersTree.Nodes | ? Text -EQ $dept;
+                $dNode.Expand();
+                $uNode = $dNode.Nodes | ? Text -eq $u;
+                $deptUsersTree.SelectedNode = $uNode;
+            }
+        }
+
+        elseif ($d.Count -eq 0 -and $u.Length -gt 0) {
+            [System.Windows.Forms.MessageBox]::Show("Username $u was not found", "User not found", "OK", "Information");
+        }
+
+    });
+
+    function getDeptUsers {
+        $deptUsers = Get-ADUser -filter * -Properties Department,LockedOut | ? Enabled -EQ $true;
+        $deptUsers.Department | Select -Unique | % {
+        $dept = $_
+            if ($dept -ne $null) {
+                $deptNode = $deptUsersTree.Nodes.Add($_);
+                $deptNode.ToolTipText = $dept;
+                $deptUsers | ? Department -Match $dept | % {
+                    $user = $_.SAMAccountName;
+                    $userNode = $deptNode.Nodes.Add($user);
+                    $userNode.ToolTipText = $_.Name; 
+                                   
+                    if ($_.LockedOut) {
+                        $deptNode.Expand();
+                        $userNode.ForeColor = [System.Drawing.Color]::Red;                                                        
+                    }
+
                 }
             };
+        };
+
+        <#
+        $deptUser_Group1 = $deptUserLST.Nodes.Add("Group 1");       
+            $deptUser_Group1_Item1 = $deptUser_Group1.Nodes.Add("Item 1");
+                $deptUser_Group1_Item1.IsSelected
+            $deptUser_Group1_Item2 = $deptUser_Group1.Nodes.Add("Item 2");        
+        $deptUser_Group2 = $deptUserLST.Nodes.Add("Group 2");
+
+        foreach ($node in $deptUserLST.Nodes) {
+            [System.Windows.Forms.TreeNode]$node = $node;
+
+            if ($node.Nodes.Count -lt 1) {
+                $node.ForeColor = [System.Drawing.Color]::Red;
+            }
+            else {
+                $node.Expand();
+            }
         }
-    };
+        #>
+    }
 
-    <#
-    $deptUser_Group1 = $deptUserLST.Nodes.Add("Group 1");       
-        $deptUser_Group1_Item1 = $deptUser_Group1.Nodes.Add("Item 1");
-            $deptUser_Group1_Item1.IsSelected
-        $deptUser_Group1_Item2 = $deptUser_Group1.Nodes.Add("Item 2");        
-    $deptUser_Group2 = $deptUserLST.Nodes.Add("Group 2");
-
-    $deptUserLST.Add_AfterSelect({
-        $selItem = $deptUserLST.SelectedNode;
-        if ($null -ne $($selItem.Parent)) {
-            $usernameTB.Text = $selItem.Text;
+    $unlockUser.Add_Click({
+        try {
+            $u = $deptUsersTree.SelectedNode.Text;
+            Unlock-ADAccount $u;
+            getDeptUsers;
+        }
+        catch {
+            $msg = "Failed to unlock user account $($deptUsersTree.SelectedNode.Text)`r`n$($_.Exception.Message)";
+            newError $msg;
         }
     });
 
-    foreach ($node in $deptUserLST.Nodes) {
-        [System.Windows.Forms.TreeNode]$node = $node;
-
-        if ($node.Nodes.Count -lt 1) {
-            $node.ForeColor = [System.Drawing.Color]::Red;
+    $deptUsersTree.Add_AfterSelect({
+        $selItem = $deptUsersTree.SelectedNode;
+            
+        if ($null -ne $($selItem.Parent)) {
+            $usernameTB.Text = $selItem.Text;
         }
-        else {
-            $node.Expand();
-        }
-    }
-    #>
 
+        $isLocked = $deptUsers | ? { $_.SAMAccountName -eq $selItem.Text -and $_.LockedOut -eq $true };
+        if ($isLocked) { $unlockUser.Enabled = $true; }
+        else  { $unlockUser.Enabled = $false; }
+    });
+
+    getDeptUsers;
     $deptuserGroup.Controls.Add($deptUsersTree);
+    $deptUsersTree.ContextMenu = $deptUsersMenu;
     $ColA.Controls.Add($deptuserGroup);
 
     $table.Controls.Add($ColA, 0, 0);
