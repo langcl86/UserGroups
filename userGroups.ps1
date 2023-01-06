@@ -1,5 +1,5 @@
 
-Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Windows.Forms, Microsoft.VisualBasic
  
 class userInput {
     [string]$username;
@@ -101,7 +101,6 @@ function main {
     
     $findUser = $deptUsersMenu.MenuItems.Add("Find User");
     $findUser.Add_Click({
-        Add-Type -AssemblyName Microsoft.VisualBasic;
         $u = [Microsoft.VisualBasic.Interaction]::InputBox("Enter username to find department", "Find User Department");
         $d = $deptUsers | ? { $_.SAMAccountName -eq $u } | Select -ExpandProperty Department;
 
@@ -121,7 +120,15 @@ function main {
     });
 
     function getDeptUsers {
-        $deptUsers = Get-ADUser -filter * -Properties Department,LockedOut | ? Enabled -EQ $true;
+    
+        try {
+            $deptUsers = Get-ADUser -filter * -Properties Department,LockedOut | ? Enabled -EQ $true;
+        }
+        catch {
+            $msg = "Get-ADUser failed to retrieve AD users`r`n`r`n$($_.Exception.Message)"; 
+            newError $msg;
+        }
+
         $deptUsers.Department | Select -Unique | % {
         $dept = $_
             if ($dept -ne $null) {
@@ -168,7 +175,7 @@ function main {
             getDeptUsers;
         }
         catch {
-            $msg = "Failed to unlock user account $($deptUsersTree.SelectedNode.Text)`r`n$($_.Exception.Message)";
+            $msg = "Failed to unlock user account $($deptUsersTree.SelectedNode.Text)`r`n`r`n$($_.Exception.Message)";
             newError $msg;
         }
     });
@@ -261,7 +268,10 @@ function main {
     catch { <# not connected #> }
 }
 
-function submit ([userInput]$ui) {
+function submit {
+    Param(
+        [Parameter(Mandatory=$true, Position=0)][userInput]$ui
+     )
 
     if ($ui.options.AD)  { getAD $ui;  }
     if ($ui.options.AAD) { getAAD $ui; }
@@ -301,51 +311,56 @@ function submit ([userInput]$ui) {
 
 }
 
+function newError {
+    Param(
+        [Parameter(Mandatory=$true,Position=0)][string]$msg
+    )
+
+    $btns = [System.Windows.Forms.MessageBoxButtons]::OK;
+    $icns = [System.Windows.Forms.MessageBoxIcon]::Error;
+    [System.Windows.Forms.MessageBox]::Show($msg, "Error", $btns, $icns) | Out-Null;
+}
+
 function newHR {
     $hr = "--------------------------------------------`r`n";
     return $hr;
 }
 
-function azureAD ([string]$a) {
- switch ($a)
- {
-  connect 
-  {
-	Write-Host "Connecting To Azure..." -NoNewLine;	  	
-	
-	$modExists = (Get-Module).Name | ForEach-Object { if ($_ -contains "AzureAD") { return $true; } }
-	if ($modExists -ne $true) {
-		try {
-			Install-Module AzureAD -Force
-		}
-		catch {
-			Write-Host "FAILED to add AzureAD Module `r`n" -ForegroundColor Red;
-			Write-Host "Unable to copy O365 information`r`n";
-			Write-Host $_.Exception.Message -ForegroundColor Yellow;
-			return;
-		}
-	}
+function azureAD {
+    Param(
+        [Parameter(Mandatory=$true,Position=0)][string]$a
+    )
 
-	try {
-		Connect-AzureAD -ErrorAction SilentlyContinue | Out-Null		## Attempt connection to AzureAD
-		Write-Host "DONE`r" -Foreground Green 
-	}
-	catch { 
-		Write-Host "FAILED to connect to AzureAD`r`n" -ForegroundColor Red;
-		Write-Host "Unable to copy O365 information`r`n";
-		error $_.Exception.Message -ForegroundColor Yellow;
-		return;
-	 }
-  }
+     switch ($a)
+     {
+      connect 
+      {
+	    Write-Host "Connecting To Azure..." -NoNewLine;	  	
+        try {	
+	            $modExists = (Get-Module).Name | ForEach-Object { if ($_ -contains "AzureAD") { return $true; } }
+	            if ($modExists -ne $true) {
+    	            Install-Module AzureAD -Force
+	            }
+
+	            Connect-AzureAD -ErrorAction SilentlyContinue | Out-Null		## Attempt connection to AzureAD
+	            Write-Host "DONE`r" -Foreground Green 
+
+        }
+	    catch { 
+            Write-Host "FAILED" -ForegroundColor Red;
+		    $msg = "FAILED to connect to AzureAD`r`n`r`n$($_.Exception.Message)";
+		    newError $msg;
+		    throw $msg;
+	    }
+     }
   
-  disconnect 
-  {
-	 Write-Host "Disconnecting from AzureAD..." -NoNewLine
-	 Disconnect-AzureAd 
-	 Write-Host "DONE`r" -Foreground Green
-  }
-}
-
+     disconnect 
+     {
+	     Write-Host "Disconnecting from AzureAD..." -NoNewLine
+	     Disconnect-AzureAd 
+	     Write-Host "DONE`r" -Foreground Green
+     }
+    }
 }
 
 function getAD {
@@ -362,7 +377,12 @@ function getAD {
 			$adGroup = $aduser.MemberOf -replace '(CN=)|(,.*)',''						## Get Membership Data	
 			Write-Host "DONE" -Foreground Green
 		}
-		catch { error $_.Exception.Message }
+		catch {
+            Write-Host "FAILED" -ForegroundColor Red;
+            $msg = "Get-ADUser failed to get AD users`r`n`r`n$($_.Exception.Message)";
+            newError $msg;
+            return;
+        }
 
         $string += newHR
         $string += "Active Directory`r`n";
@@ -374,7 +394,7 @@ function getAD {
 
 function getOB {
 	Param (
-	[Parameter (Mandatory=$true,Position=0,HelpMessage="userInput Class object")][userInput]$ui 
+	[Parameter (Mandatory=$true,Position=0)][userInput]$ui 
 	)
 
     $username = $ui.username;
@@ -384,36 +404,45 @@ function getOB {
 	$uid = "databse_username_here";
 	$pw = "database_password_here";
 
-	## Query User Groups 
-	$q = Get-Content "$PSScriptRoot\ob-groups.sql"
-	$q = $q.Replace("mpolo", $username);
-	
-	[string] $connectionString = "Server=$server;Database=$database;Integrated Security = False; User ID = $uid; Password = $pw;"
-	
-		try {
-            Write-Host "Searching OnBase..." -NoNewline
-			$conn = New-Object System.Data.SqlClient.SqlConnection($connectionString);
-			$conn.Open();
-			$command = $conn.CreateCommand()
-			$command.CommandText = $q
-			$result = $command.ExecuteReader()
-			$table = New-Object "System.Data.DataTable";
-			$table.Load($result)
-			$conn.Close();
-			$output = $table.OBGroup
-			
-			if($output.Count -lt 0 ) { throw; }
-			Write-Host "DONE" -ForegroundColor Green
+	try {
+        Write-Host "Searching OnBase..." -NoNewline
 
-           $string += newHR;
-           $string += "OnBase Groups`r`n";
-           $string += newHR;
-           $string += $output.Trim() | ForEach-Object { $_ + "`r`n"; } 
-           $string += newHR;
-           $ui.output += $string;
-		}
+	    ## Query User Groups 
+	    $q = Get-Content "$PSScriptRoot\ob-groups.sql" -ErrorAction SilentlyContinue;
 	
-		catch { Write-Output "FAILED`r`n"$_.Exception.Message"`r`n"; }
+        if ([System.String]::IsNullOrEmpty($q)) {
+            throw "OnBase Usergroup SQL Query not found";
+        }
+	
+	    [string] $connectionString = "Server=$server;Database=$database;Integrated Security = False; User ID = $uid; Password = $pw;"
+	
+		$conn = New-Object System.Data.SqlClient.SqlConnection($connectionString);
+		$conn.Open();
+		$command = $conn.CreateCommand();
+        $q = $q.Replace("mpolo", $username);
+		$command.CommandText = $q
+		$result = $command.ExecuteReader()
+		$table = New-Object "System.Data.DataTable";
+		$table.Load($result)
+		$conn.Close();
+		$output = $table.OBGroup
+			
+		if($output.Count -lt 0 ) { throw; }
+		Write-Host "DONE" -ForegroundColor Green
+
+        $string += newHR;
+        $string += "OnBase Groups`r`n";
+        $string += newHR;
+        $string += $output.Trim() | ForEach-Object { $_ + "`r`n"; } 
+        $string += newHR;
+        $ui.output += $string;
+    }
+	
+	catch {
+        Write-Host "FAILED" -ForegroundColor Red;
+        $msg = "OnBase Databse Connection Failed`r`n`r`n$($_.Exception.Message)";
+        newError $msg;
+    }
 }
 
 function getAAD {
@@ -450,8 +479,14 @@ function getAAD {
 	    "MCOPSTNC"							 = "Skype for Business Communication Credits"
 	    "TEAMS_EXPLORATORY"					 = "Teams Exploratory Trial"
     }
-	    try { Get-AzureADTenantDetail | Out-Null }
-	    catch { azureAD connect }
+	    try { 
+            Get-AzureADTenantDetail | Out-Null;
+        }
+        
+	    catch {
+            try { azureAD connect; }
+            catch { return; }
+        }
 
     Write-Host "Searching Azure..." -NoNewLine;
     try {
@@ -465,7 +500,12 @@ function getAAD {
 	    Write-Host "DONE" -Foreground Green
     }
 
-    catch { error $_.Exception.Message }
+    catch {
+     Write-Host "FAILED" -ForegroundColor Red;
+     $msg = "Failed to retrieve Azure-AD groups.`r`n`r`n$($_.Exception.Message)";
+     newError $msg;
+     return;
+    }
 
     $string += newHR;
     $string += "Azure AD Groups`r`n";
