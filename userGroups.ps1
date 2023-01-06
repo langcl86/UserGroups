@@ -314,6 +314,10 @@ function submit {
 }
 
 function newError {
+<#
+    .SYNOPSIS
+        Helper function displays Error MessageBox. 
+#>
     Param(
         [Parameter(Mandatory=$true,Position=0)][string]$msg
     )
@@ -324,11 +328,28 @@ function newError {
 }
 
 function newHR {
+<#
+    .SYNOPSIS
+        Returns a string used as a horizonal rule.
+#>
     $hr = "--------------------------------------------`r`n";
     return $hr;
 }
 
 function checkReq {
+<#
+    .SYNOPSIS
+        Check for/Install required PowerShell Modules.
+
+    .DESCRIPTION
+        This helper function checks to see if required Powershell modules are installed.
+        If modules are not found, an attempt will be made to install the module.
+        Failure to install required modules will result in an error and limited or no script functionality. 
+
+    .REMARKS
+        https://learn.microsoft.com/en-us/powershell/module/activedirectory/?view=windowsserver2022-ps
+        https://learn.microsoft.com/en-us/powershell/azure/active-directory/overview?view=azureadps-2.0
+#>
     $reqMods = @("AzureAD", "ActiveDirectory");
 
     foreach ($mod in $reqMods) {
@@ -349,6 +370,14 @@ function checkReq {
 }
 
 function azureAD {
+<#
+    .SYNOPSIS
+        This function is used to establish or disconnect Azure AD connections. 
+
+    .DESCRIPTION
+        An AzureAD connection must be established before obtaining Azure AD/O365 group memberships and licenses. 
+        Actor must authenticate with an administator AAD account. 
+#>
     Param(
         [Parameter(Mandatory=$true,Position=0)][string]$a
     )
@@ -386,6 +415,16 @@ function azureAD {
 }
 
 function getAD {
+<#
+    .SYNOPSIS
+        Get ActiveDirectory Group memberships
+
+    .DESCRIPTION
+        Active Directory Group memberships are obtained using the ActiveDirectory Powershell module.
+
+    .REMARKS
+        https://learn.microsoft.com/en-us/powershell/module/activedirectory/?view=windowsserver2022-ps
+#>
 	Param (
 	[Parameter (Mandatory=$true,Position=0,HelpMessage="userInput Class object")][userInput]$ui 
 	)
@@ -415,6 +454,14 @@ function getAD {
 }
 
 function getOB {
+<#
+    .SYNOPSIS
+        Get OnBase User Group Memberships
+
+    .DESCRIPTION
+        OnBase User Group memberships are obtained by querying the OnBase database.
+        Database connection must be established with read privlidges. 
+#>
 	Param (
 	[Parameter (Mandatory=$true,Position=0)][userInput]$ui 
 	)
@@ -468,6 +515,17 @@ function getOB {
 }
 
 function getAAD {
+<#
+    .SYNOPSIS
+        Get Azure AD Group Memberships and Licenses
+
+    .DESCRIPTION
+        Azure AD groups and licenses are obtained with the Azure-AD Powershell module.
+
+    .REMARKS
+        https://learn.microsoft.com/en-us/powershell/azure/active-directory/overview?view=azureadps-2.0
+
+#>
 	Param (
 	[Parameter (Mandatory=$true,Position=0,HelpMessage="userInput Class object")][userInput]$ui 
 	)
