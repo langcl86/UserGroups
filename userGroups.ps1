@@ -26,6 +26,8 @@ function newGroup ($text) {
 }
 
 function main {  
+    checkReq;
+
     $main = [System.Windows.Forms.Form]::new();
     $main.Width = 800;
     $main.Height = 600;
@@ -324,6 +326,26 @@ function newError {
 function newHR {
     $hr = "--------------------------------------------`r`n";
     return $hr;
+}
+
+function checkReq {
+    $reqMods = @("AzureAD", "ActiveDirectory");
+
+    foreach ($mod in $reqMods) {
+        try {
+            if ($null -eq (Get-Module $mod)) {
+                Write-Host "Attempting to install PS module $mod..." -NoNewline
+                Install-Module $mod -Force;
+                Write-Host "DONE" -ForegroundColor Green;
+            }
+        }
+        catch {
+            Write-Host "FAILED" -ForegroundColor Red;
+            $msg = "PS Module $mod Not Found`r`n`r`n$($_.Exception.Message)";
+            newError $msg;
+        }
+    }
+
 }
 
 function azureAD {
